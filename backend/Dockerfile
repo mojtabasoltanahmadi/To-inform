@@ -11,15 +11,13 @@
 # =============================================================================
 FROM node:22-alpine AS deps
 
-# dumb-init provides proper PID-1 signal forwarding and zombie-process reaping.
-RUN apk add --no-cache dumb-init
 
 WORKDIR /app
 
 # Allow operators to point at an internal npm mirror at build time:
 #   docker compose build --build-arg NPM_REGISTRY=https://npm.your-company.internal/
 # Defaults to the public registry so builds work out of the box.
-ARG NPM_REGISTRY=https://registry.npmjs.org/
+ARG NPM_REGISTRY=http://npm.partcorp.ir/
 
 # Copy workspace manifests so Docker can cache the install layer separately
 # from any source code changes.
@@ -47,8 +45,6 @@ USER node
 
 WORKDIR /app
 
-# Pull dumb-init from the deps stage
-COPY --from=deps /usr/bin/dumb-init /usr/bin/dumb-init
 
 # Copy the installed workspace node_modules.
 # npm workspaces hoists shared deps to the root node_modules; the backend
@@ -62,7 +58,5 @@ COPY --chown=node:node backend/package.json ./
 # Expose the port the app listens on (Compose maps this internally).
 EXPOSE 3000
 
-# dumb-init as PID 1 ensures SIGTERM reaches Node and orphaned child processes
 # are reaped correctly.
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["node", "src/server.js"]
