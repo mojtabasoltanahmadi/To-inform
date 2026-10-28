@@ -9,17 +9,25 @@ const server = app.listen(config.port, () => {
 
 try {
   await redisStore.connect()
-  console.log('Connected to Redis.')
 } catch (error) {
-  console.error(`Redis is unavailable; API requests requiring storage will return 503: ${error.message}`)
+  // عدم اتصال اولیه نباید سرور اکسپرس را کرش کند
+  console.log(`[cache] Redis در دسترس نیست؛ سرور بدون کش ادامه می‌دهد (degraded mode): ${error.message}`)
 }
 
-async function shutdown() {
+async function shutdown(signal) {
+  console.log(`${signal} دریافت شد، در حال توقف امن سرویس...`)
   server.close(async () => {
-    if (redisStore.client.isOpen) await redisStore.client.quit()
+    try {
+      if (redisStore.client.isOpen) {
+        await redisStore.client.quit()
+      }
+    } catch (err) {
+      console.error(`خطا در هنگام قطع ردیس: ${err.message}`)
+    }
+    console.log('سرور متوقف شد.')
     process.exit(0)
   })
 }
 
-process.on('SIGINT', shutdown)
-process.on('SIGTERM', shutdown)
+process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => shutdown('SIGTERM'))

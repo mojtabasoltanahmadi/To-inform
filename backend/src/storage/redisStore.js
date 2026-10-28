@@ -3,8 +3,32 @@ import { createClient } from 'redis'
 import { config } from '../config.js'
 
 const prefix = 'notify'
-const client = createClient({ url: config.redisUrl })
-client.on('error', (error) => console.error('Redis connection error:', error.message))
+const client = createClient({
+  url: config.redisUrl,
+  socket: {
+    reconnectStrategy(retries) {
+      // استراتژی اتصال مجدد خودکار: تلاش مجدد با فاصله حداکثر ۳ ثانیه
+      return Math.min(retries * 100, 3000)
+    },
+  },
+})
+
+let cacheUp = false
+
+client.on('error', (error) => {
+  // کش غیرحیاتی است؛ قطعی آن نباید باعث کرش سرور شود
+  console.log(`[cache] Redis connection error: ${error.message}`)
+})
+
+client.on('ready', () => {
+  cacheUp = true
+  console.log('Connected to Redis (cache)')
+})
+
+client.on('end', () => {
+  cacheUp = false
+  console.log('[cache] Redis connection closed — running in degraded mode')
+})
 
 const key = {
   user: (id) => `${prefix}:user:${id}`,
@@ -15,13 +39,6 @@ const key = {
   userNotes: (id) => `${prefix}:user:${id}:notes`,
 }
 
-/*
- * Note mutations run as Lua scripts so that ownership and existence are checked in
- * the same atomic step as the write. Without this, a concurrent delete between the
- * read and the write could resurrect a deleted note (PATCH) or report a successful
- * delete twice (DELETE), and concurrent partial updates of different fields could
- * drop each other's changes.
- */
 const updateNoteScript = `
   local raw = redis.call('GET', KEYS[1])
   if not raw then return nil end
@@ -50,9 +67,10 @@ const deleteNoteScript = `
 `
 
 function ensureReady() {
-  if (!client.isReady) {
-    const error = new Error('ذخیره‌ساز در دسترس نیست. اتصال Redis را بررسی کنید.')
+  if (!cacheUp || !client.isReady) {
+    const error = new Error('سرویس نشست و کش در دسترس نیست، لطفاً بعداً تلاش کنید.')
     error.status = 503
+    error.code = 'STORAGE_UNAVAILABLE'
     throw error
   }
 }
@@ -62,7 +80,6 @@ function parse(value) {
   try {
     return JSON.parse(value)
   } catch {
-    // A corrupted record must not take down every read that touches it.
     console.warn('Ignoring a malformed Redis record.')
     return null
   }
@@ -70,19 +87,24 @@ function parse(value) {
 
 export const redisStore = {
   client,
+  get isCacheUp() {
+    return cacheUp && client.isReady
+  },
   connect() {
     if (!client.isOpen) return client.connect()
     return Promise.resolve()
   },
   async ping() {
-    if (!client.isReady) return false
-    return (await client.ping()) === 'PONG'
+    if (!cacheUp || !client.isReady) return false
+    try {
+      return (await client.ping()) === 'PONG'
+    } catch {
+      return false
+    }
   },
   async createUser(input) {
     ensureReady()
     const id = randomUUID()
-    // Only persist known fields: the validated input still carries the plaintext
-    // password, which must never reach the datastore.
     const user = {
       id,
       username: input.username,
@@ -129,8 +151,6 @@ export const redisStore = {
     const staleIds = []
     values.forEach((value, index) => {
       const note = parse(value)
-      // Skip records that are gone, unreadable, or not owned by this user, and drop
-      // their stale index entries so they do not slow every subsequent read.
       if (!note || note.userId !== userId) {
         staleIds.push(ids[index])
         return
