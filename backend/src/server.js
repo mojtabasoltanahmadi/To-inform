@@ -1,6 +1,7 @@
 import { createApp } from './app.js'
 import { config } from './config.js'
 import { redisStore } from './storage/redisStore.js'
+import * as atlas from './atlas.js'
 
 const app = createApp()
 const server = app.listen(config.port, () => {
@@ -10,8 +11,15 @@ const server = app.listen(config.port, () => {
 try {
   await redisStore.connect()
 } catch (error) {
-  // عدم اتصال اولیه نباید سرور اکسپرس را کرش کند
   console.log(`[cache] Redis در دسترس نیست؛ سرور بدون کش ادامه می‌دهد (degraded mode): ${error.message}`)
+}
+
+if (atlas.isConfigured()) {
+  try {
+    await atlas.ensureNamespaces()
+  } catch (err) {
+    console.log(`[atlas] بررسی/ساخت namespace ممکن نشد: ${err.message}`)
+  }
 }
 
 async function shutdown(signal) {

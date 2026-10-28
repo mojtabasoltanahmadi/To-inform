@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { createClient } from 'redis'
 import { config } from '../config.js'
+import * as atlas from '../atlas.js'
 
 const prefix = 'notify'
 const client = createClient({
   url: config.redisUrl,
   socket: {
     reconnectStrategy(retries) {
-      // استراتژی اتصال مجدد خودکار: تلاش مجدد با فاصله حداکثر ۳ ثانیه
       return Math.min(retries * 100, 3000)
     },
   },
@@ -16,7 +16,6 @@ const client = createClient({
 let cacheUp = false
 
 client.on('error', (error) => {
-  // کش غیرحیاتی است؛ قطعی آن نباید باعث کرش سرور شود
   console.log(`[cache] Redis connection error: ${error.message}`)
 })
 
@@ -30,49 +29,36 @@ client.on('end', () => {
   console.log('[cache] Redis connection closed — running in degraded mode')
 })
 
-const key = {
-  user: (id) => `${prefix}:user:${id}`,
-  users: `${prefix}:users`,
-  username: (value) => `${prefix}:username:${value}`,
-  email: (value) => `${prefix}:email:${value}`,
-  note: (id) => `${prefix}:note:${id}`,
-  userNotes: (id) => `${prefix}:user:${id}:notes`,
-}
+const CACHE_TTL_USER = 300 // 5 دقیقه
+const CACHE_TTL_TODOS = 60 // 1 دقیقه
 
-const updateNoteScript = `
-  local raw = redis.call('GET', KEYS[1])
-  if not raw then return nil end
-  local decoded, note = pcall(cjson.decode, raw)
-  if not decoded or type(note) ~= 'table' then return nil end
-  if note['userId'] ~= ARGV[1] then return nil end
-  local patchDecoded, patch = pcall(cjson.decode, ARGV[2])
-  if not patchDecoded or type(patch) ~= 'table' then return nil end
-  for field, value in pairs(patch) do
-    note[field] = value
-  end
-  note['updatedAt'] = ARGV[3]
-  local encoded = cjson.encode(note)
-  redis.call('SET', KEYS[1], encoded)
-  return encoded
-`
-
-const deleteNoteScript = `
-  local raw = redis.call('GET', KEYS[1])
-  if not raw then return 0 end
-  local decoded, note = pcall(cjson.decode, raw)
-  if not decoded or type(note) ~= 'table' or note['userId'] ~= ARGV[1] then return 0 end
-  redis.call('DEL', KEYS[1])
-  redis.call('SREM', KEYS[2], ARGV[2])
-  return 1
-`
-
-function ensureReady() {
-  if (!cacheUp || !client.isReady) {
-    const error = new Error('سرویس نشست و کش در دسترس نیست، لطفاً بعداً تلاش کنید.')
-    error.status = 503
-    error.code = 'STORAGE_UNAVAILABLE'
-    throw error
-  }
+const cache = {
+  async get(key) {
+    if (!cacheUp || !client.isReady) return null
+    try {
+      const raw = await client.get(key)
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  },
+  async set(key, value, ttl) {
+    if (!cacheUp || !client.isReady) return
+    try {
+      await client.set(key, JSON.stringify(value), { EX: ttl })
+    } catch {
+      // کش خطا داد عملیات اصلی نباید متوقف شود
+    }
+  },
+  async del(...keys) {
+    if (!cacheUp || !client.isReady) return
+    const list = keys.flat().filter(Boolean)
+    try {
+      if (list.length) await client.del(list)
+    } catch {
+      // خطا در حذف کش لاگ نمی‌شود تا جریان اصلی قطع نشود
+    }
+  },
 }
 
 function parse(value) {
@@ -80,7 +66,6 @@ function parse(value) {
   try {
     return JSON.parse(value)
   } catch {
-    console.warn('Ignoring a malformed Redis record.')
     return null
   }
 }
@@ -102,8 +87,11 @@ export const redisStore = {
       return false
     }
   },
+
+  // -------------------------------------------------------------
+  // کاربران (Users)
+  // -------------------------------------------------------------
   async createUser(input) {
-    ensureReady()
     const id = randomUUID()
     const user = {
       id,
@@ -115,6 +103,30 @@ export const redisStore = {
       passwordHash: input.passwordHash,
       createdAt: new Date().toISOString(),
     }
+
+    if (atlas.isConfigured()) {
+      // بررسی تکراری نبودن ایمیل
+      const existingEmail = await atlas.readByKey(atlas.NS_USERS, atlas.quoteKey(input.email.toLowerCase()))
+      if (existingEmail.length > 0) return null
+
+      try {
+        await atlas.add(atlas.NS_USERS, [
+          {
+            id,
+            keys: [input.username.toLowerCase(), input.email.toLowerCase()],
+            body: JSON.stringify(user),
+          },
+        ])
+        // کش کاربر را در ردیس ذخیره می‌کنیم
+        await cache.set(`cache:user:${input.username.toLowerCase()}`, user, CACHE_TTL_USER)
+        return user
+      } catch (err) {
+        if (err.status === 409 || err.code === 'DUPLICATE_KEY') return null
+        throw err
+      }
+    }
+
+    // حالت fallback اگر اطلس ست نبود (محلی)
     const script = `
       if redis.call('EXISTS', KEYS[2]) == 1 or redis.call('EXISTS', KEYS[3]) == 1 then
         return 0
@@ -126,67 +138,148 @@ export const redisStore = {
       return 1
     `
     const created = await client.eval(script, {
-      keys: [key.user(id), key.username(input.username.toLowerCase()), key.email(input.email.toLowerCase()), key.users],
+      keys: [`notify:user:${id}`, `notify:username:${input.username.toLowerCase()}`, `notify:email:${input.email.toLowerCase()}`, `notify:users`],
       arguments: [id, JSON.stringify(user)],
     })
     return created === 1 ? user : null
   },
+
   async getUserByUsername(username) {
-    ensureReady()
-    const id = await client.get(key.username(username.toLowerCase()))
-    if (!id) return null
-    return parse(await client.get(key.user(id)))
-  },
-  async getPublicUserById(id) {
-    ensureReady()
-    return parse(await client.get(key.user(id)))
-  },
-  async listNotes(userId) {
-    ensureReady()
-    const ids = await client.sMembers(key.userNotes(userId))
-    if (!ids.length) return []
+    const uName = username.toLowerCase()
 
-    const values = await client.mGet(ids.map(key.note))
-    const notes = []
-    const staleIds = []
-    values.forEach((value, index) => {
-      const note = parse(value)
-      if (!note || note.userId !== userId) {
-        staleIds.push(ids[index])
-        return
+    if (atlas.isConfigured()) {
+      // ۱. بررسی کش (Cache-First)
+      const cached = await cache.get(`cache:user:${uName}`)
+      if (cached) return { ...cached, _cacheHit: true }
+
+      // ۲. خواندن از اطلس
+      const records = await atlas.readByKey(atlas.NS_USERS, atlas.quoteKey(uName))
+      for (const record of records) {
+        const user = parse(record.body)
+        if ((user?.username || '').toLowerCase() === uName) {
+          await cache.set(`cache:user:${uName}`, user, CACHE_TTL_USER)
+          return { ...user, _cacheHit: false }
+        }
       }
-      notes.push(note)
-    })
-    if (staleIds.length) await client.sRem(key.userNotes(userId), staleIds)
+      return null
+    }
 
-    return notes.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    // حالت fallback
+    const id = await client.get(`notify:username:${uName}`)
+    if (!id) return null
+    return parse(await client.get(`notify:user:${id}`))
   },
+
+  async getPublicUserById(id) {
+    if (atlas.isConfigured()) {
+      const records = await atlas.readById(atlas.NS_USERS, [id])
+      if (records.length > 0) {
+        return parse(records[0].body)
+      }
+      return null
+    }
+    return parse(await client.get(`notify:user:${id}`))
+  },
+
+  // -------------------------------------------------------------
+  // کارها / یادداشت‌ها (Todos / Notes)
+  // -------------------------------------------------------------
+  async listNotes(userId) {
+    if (atlas.isConfigured()) {
+      // ۱. بررسی کش
+      const cached = await cache.get(`cache:todos:${userId}`)
+      if (cached) return { notes: cached, cacheHit: true }
+
+      // ۲. خواندن از اطلس
+      const records = await atlas.readByKey(atlas.NS_TODOS, atlas.quoteKey(userId))
+      const notes = []
+      for (const r of records) {
+        const item = parse(r.body)
+        if (item && item.userId === userId) {
+          notes.push(item)
+        }
+      }
+      notes.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      // ذخیره در کش
+      await cache.set(`cache:todos:${userId}`, notes, CACHE_TTL_TODOS)
+      return { notes, cacheHit: false }
+    }
+
+    // حالت fallback ردیس
+    const ids = await client.sMembers(`notify:user:${userId}:notes`)
+    if (!ids.length) return { notes: [], cacheHit: false }
+    const values = await client.mGet(ids.map((id) => `notify:note:${id}`))
+    const notes = values.map(parse).filter((n) => n && n.userId === userId)
+    notes.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    return { notes, cacheHit: false }
+  },
+
   async getNote(userId, id) {
-    ensureReady()
-    const note = parse(await client.get(key.note(id)))
+    if (atlas.isConfigured()) {
+      const records = await atlas.readById(atlas.NS_TODOS, [id])
+      if (!records.length) return null
+      const note = parse(records[0].body)
+      return note?.userId === userId ? note : null
+    }
+    const note = parse(await client.get(`notify:note:${id}`))
     return note?.userId === userId ? note : null
   },
+
   async createNote(userId, input) {
-    ensureReady()
     const now = new Date().toISOString()
     const note = { id: randomUUID(), userId, ...input, createdAt: now, updatedAt: now }
-    await client.multi().set(key.note(note.id), JSON.stringify(note)).sAdd(key.userNotes(userId), note.id).exec()
+
+    if (atlas.isConfigured()) {
+      await atlas.add(atlas.NS_TODOS, [
+        {
+          id: note.id,
+          keys: [userId],
+          body: JSON.stringify(note),
+        },
+      ])
+      // Invalidate کش یادداشت‌های این کاربر
+      await cache.del(`cache:todos:${userId}`)
+      return note
+    }
+
+    await client.multi().set(`notify:note:${note.id}`, JSON.stringify(note)).sAdd(`notify:user:${userId}:notes`, note.id).exec()
     return note
   },
+
   async updateNote(userId, id, input) {
-    ensureReady()
-    const result = await client.eval(updateNoteScript, {
-      keys: [key.note(id)],
-      arguments: [userId, JSON.stringify(input), new Date().toISOString()],
-    })
-    return parse(result)
+    const existing = await this.getNote(userId, id)
+    if (!existing) return null
+
+    const updated = {
+      ...existing,
+      ...input,
+      updatedAt: new Date().toISOString(),
+    }
+
+    if (atlas.isConfigured()) {
+      await atlas.modifyById(atlas.NS_TODOS, id, [userId], JSON.stringify(updated))
+      // Invalidate کش
+      await cache.del(`cache:todos:${userId}`)
+      return updated
+    }
+
+    await client.set(`notify:note:${id}`, JSON.stringify(updated))
+    return updated
   },
+
   async deleteNote(userId, id) {
-    ensureReady()
-    const deleted = await client.eval(deleteNoteScript, {
-      keys: [key.note(id), key.userNotes(userId)],
-      arguments: [userId, id],
-    })
-    return deleted === 1
+    const existing = await this.getNote(userId, id)
+    if (!existing) return false
+
+    if (atlas.isConfigured()) {
+      await atlas.removeById(atlas.NS_TODOS, [id])
+      // Invalidate کش
+      await cache.del(`cache:todos:${userId}`)
+      return true
+    }
+
+    await client.del(`notify:note:${id}`)
+    await client.sRem(`notify:user:${userId}:notes`, id)
+    return true
   },
 }
