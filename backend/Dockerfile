@@ -9,7 +9,7 @@
 # =============================================================================
 # Stage 1 — Install dependencies
 # =============================================================================
-FROM artnexus.partdp.ir/library/node:22-alpine AS deps
+FROM artnexus.partdp.ir/node:22-alpine AS deps
 
 
 WORKDIR /app
@@ -38,7 +38,7 @@ RUN sed -i \
 # =============================================================================
 # Stage 2 — Lean production runtime
 # =============================================================================
-FROM artnexus.partdp.ir/library/node:22-alpine AS runtime
+FROM artnexus.partdp.ir/node:22-alpine AS runtime
 
 # Never run as root in production.
 USER node

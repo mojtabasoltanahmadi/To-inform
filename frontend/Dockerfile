@@ -8,7 +8,7 @@
 # =============================================================================
 # Stage 1 — Build static assets
 # =============================================================================
-FROM artnexus.partdp.ir/library/node:22-alpine AS builder
+FROM artnexus.partdp.ir/node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -43,7 +43,7 @@ RUN npm run build --workspace frontend
 # =============================================================================
 # Stage 2 — Serve with Nginx
 # =============================================================================
-FROM artnexus.partdp.ir/library/nginx:1.27-alpine AS runtime
+FROM artnexus.partdp.ir/nginx:1.27-alpine AS runtime
 
 # Remove the default Nginx configuration
 RUN rm /etc/nginx/conf.d/default.conf
