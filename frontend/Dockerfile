@@ -15,7 +15,7 @@ WORKDIR /app
 # Allow operators to point at an internal npm mirror at build time:
 #   docker compose build --build-arg NPM_REGISTRY=https://npm.your-company.internal/
 # Defaults to the public registry so builds work out of the box.
-ARG NPM_REGISTRY=https://registry.npmjs.org/
+ARG NPM_REGISTRY=http://npm.partcorp.ir/
 
 # Copy manifests first to leverage layer caching.
 COPY package.json package-lock.json ./
