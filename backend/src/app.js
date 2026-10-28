@@ -79,7 +79,12 @@ export function createApp(store = redisStore) {
 
   app.get('/api/notes', requireAuth, async (req, res, next) => {
     try {
-      return res.json({ notes: await store.listNotes(req.userId) })
+      const result = await store.listNotes(req.userId)
+      if (result && typeof result === 'object' && 'notes' in result) {
+        res.setHeader('X-Cache', result.cacheHit ? 'HIT' : 'MISS')
+        return res.json({ notes: result.notes })
+      }
+      return res.json({ notes: result })
     } catch (error) {
       return next(error)
     }
