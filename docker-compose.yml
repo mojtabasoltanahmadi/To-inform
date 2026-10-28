@@ -1,11 +1,7 @@
-###############################################################################
-# Notify — Docker Compose (Phase 5: Redis Caching Isolation)
-###############################################################################
-
 services:
 
   # ---------------------------------------------------------------------------
-  # Redis (Dedicated Cache Container with Resource Constraints)
+  # Redis
   # ---------------------------------------------------------------------------
   redis:
     image: ${REDIS_IMAGE:-artnexus.partdp.ir/redis:7-alpine}
@@ -32,7 +28,7 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------------
-  # Backend (Express API)
+  # Backend
   # ---------------------------------------------------------------------------
   backend:
     build:
@@ -46,6 +42,11 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      ATLAS_BASE_URL: ${ATLAS_BASE_URL:-http://atlas-v4-dev.partcorp.ir:8000}
+      ATLAS_PROJECT: ${ATLAS_PROJECT:-ms-notify}
+      ATLAS_NS_USERS: ${ATLAS_NS_USERS:-users}
+      ATLAS_NS_TODOS: ${ATLAS_NS_TODOS:-todos}
+      ATLAS_TIMEOUT_MS: ${ATLAS_TIMEOUT_MS:-15000}
     networks:
       - notify_net
     depends_on:
@@ -61,7 +62,7 @@ services:
       start_period: 15s
 
   # ---------------------------------------------------------------------------
-  # Frontend (Nginx + Vue 3 SPA)
+  # Frontend
   # ---------------------------------------------------------------------------
   frontend:
     build:
@@ -77,16 +78,10 @@ services:
       backend:
         condition: service_healthy
 
-# ---------------------------------------------------------------------------
-# Named volumes
-# ---------------------------------------------------------------------------
 volumes:
   redis-cache-data:
     driver: local
 
-# ---------------------------------------------------------------------------
-# Networks
-# ---------------------------------------------------------------------------
 networks:
   notify_net:
     driver: bridge
