@@ -1,32 +1,27 @@
 ###############################################################################
-# Notify — Docker Compose
-#
-# Usage:
-#   cp .env.example .env   # fill in secrets
-#   docker compose up -d --build
-#
-# Services:
-#   frontend  — Nginx serving the Vue 3 SPA on port 80; proxies /api to backend
-#   backend   — Express API on the internal network (not exposed to host)
-#   redis     — Redis 7 data store with persistent volume
+# Notify — Docker Compose (Phase 5: Redis Caching Isolation)
 ###############################################################################
 
 services:
 
   # ---------------------------------------------------------------------------
-  # Redis
+  # Redis (Dedicated Cache Container with Resource Constraints)
   # ---------------------------------------------------------------------------
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-artnexus.partdp.ir/redis:7-alpine}
+    container_name: notify-redis-cache
     restart: unless-stopped
+    ports:
+      - "6379:6379"
     command: >
       redis-server
       --appendonly yes
       --appendfsync everysec
-      --maxmemory 256mb
+      --maxmemory 224mb
       --maxmemory-policy allkeys-lru
+    mem_limit: 256m
     volumes:
-      - redis_data:/data
+      - redis-cache-data:/data
     networks:
       - notify_net
     healthcheck:
@@ -37,13 +32,13 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------------
-  # Backend  (Express API)
-  # Not exposed to the host — Nginx proxies /api/* to it over the bridge network.
+  # Backend (Express API)
   # ---------------------------------------------------------------------------
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    container_name: notify-backend
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -66,13 +61,13 @@ services:
       start_period: 15s
 
   # ---------------------------------------------------------------------------
-  # Frontend  (Nginx + Vue 3 SPA)
-  # Exposed on host port 80 (and 443 when a TLS terminator is added in front).
+  # Frontend (Nginx + Vue 3 SPA)
   # ---------------------------------------------------------------------------
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    container_name: notify-frontend
     restart: unless-stopped
     ports:
       - "80:80"
@@ -86,7 +81,7 @@ services:
 # Named volumes
 # ---------------------------------------------------------------------------
 volumes:
-  redis_data:
+  redis-cache-data:
     driver: local
 
 # ---------------------------------------------------------------------------
