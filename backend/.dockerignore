@@ -1,0 +1,35 @@
+# Dependencies — always rebuilt inside Docker
+node_modules/
+
+# Environment files — injected at runtime via compose, never baked into images
+.env
+.env.*
+!.env.example
+
+# Test artifacts
+test/
+coverage/
+*.test.js
+*.spec.js
+
+# Git internals
+.git/
+.gitignore
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Docker files themselves (no need to copy)
+Dockerfile
+.dockerignore

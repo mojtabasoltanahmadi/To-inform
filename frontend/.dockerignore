@@ -1,0 +1,40 @@
+# Dependencies — always rebuilt inside Docker
+node_modules/
+frontend/node_modules/
+
+# Build output — produced by the builder stage, not needed as input
+dist/
+frontend/dist/
+
+# Environment files — no secrets in the image
+.env
+.env.*
+!.env.example
+
+# Git internals
+.git/
+.gitignore
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Backend source — not needed for frontend image build
+backend/
+
+# Docker files themselves
+Dockerfile
+.dockerignore
+
+# Audit / screenshot assets
+audit-screenshots/
