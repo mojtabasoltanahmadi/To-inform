@@ -1,0 +1,16 @@
+{
+  "name": "notify-notes",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace frontend",
+    "test": "npm run test --workspace backend"
+  }
+}
