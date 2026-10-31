@@ -23,10 +23,12 @@ function sendError(res, status, code, message) {
 export function createApp(store = redisStore) {
   const app = express()
   app.disable('x-powered-by')
-  app.use(cors({ origin: config.corsOrigins }))
+  app.use(cors({ origin: true, credentials: true }))
   app.use(express.json({ limit: '20kb' }))
 
-  app.get('/api/health', async (req, res, next) => {
+  const apiRouter = express.Router()
+
+  apiRouter.get('/health', async (req, res, next) => {
     try {
       const redis = await store.ping()
       return res.status(redis ? 200 : 503).json({ status: redis ? 'ok' : 'unavailable', redis: redis ? 'connected' : 'disconnected' })
@@ -35,7 +37,7 @@ export function createApp(store = redisStore) {
     }
   })
 
-  app.post('/api/auth/register', async (req, res, next) => {
+  apiRouter.post('/auth/register', async (req, res, next) => {
     try {
       const input = validateRegistration(req.body)
       const passwordHash = await bcrypt.hash(input.password, 12)
@@ -54,7 +56,7 @@ export function createApp(store = redisStore) {
     }
   })
 
-  app.post('/api/auth/login', async (req, res, next) => {
+  apiRouter.post('/auth/login', async (req, res, next) => {
     try {
       const { username, password } = validateLogin(req.body)
       const user = await store.getUserByUsername(username)
@@ -67,7 +69,7 @@ export function createApp(store = redisStore) {
     }
   })
 
-  app.get('/api/auth/me', requireAuth, async (req, res, next) => {
+  apiRouter.get('/auth/me', requireAuth, async (req, res, next) => {
     try {
       const user = await store.getPublicUserById(req.userId)
       if (!user) return sendError(res, 401, 'UNAUTHORIZED', 'حساب کاربری پیدا نشد. دوباره وارد شوید.')
@@ -77,7 +79,7 @@ export function createApp(store = redisStore) {
     }
   })
 
-  app.get('/api/notes', requireAuth, async (req, res, next) => {
+  apiRouter.get('/notes', requireAuth, async (req, res, next) => {
     try {
       const result = await store.listNotes(req.userId)
       if (result && typeof result === 'object' && 'notes' in result) {
@@ -90,7 +92,7 @@ export function createApp(store = redisStore) {
     }
   })
 
-  app.get('/api/notes/:id', requireAuth, async (req, res, next) => {
+  apiRouter.get('/notes/:id', requireAuth, async (req, res, next) => {
     try {
       if (!isValidId(req.params.id)) return sendError(res, 400, 'INVALID_ID', 'شناسهٔ یادداشت معتبر نیست.')
       const note = await store.getNote(req.userId, req.params.id)
@@ -101,7 +103,7 @@ export function createApp(store = redisStore) {
     }
   })
 
-  app.post('/api/notes', requireAuth, async (req, res, next) => {
+  apiRouter.post('/notes', requireAuth, async (req, res, next) => {
     try {
       return res.status(201).json({ note: await store.createNote(req.userId, validateNote(req.body)) })
     } catch (error) {
@@ -109,7 +111,7 @@ export function createApp(store = redisStore) {
     }
   })
 
-  app.patch('/api/notes/:id', requireAuth, async (req, res, next) => {
+  apiRouter.patch('/notes/:id', requireAuth, async (req, res, next) => {
     try {
       if (!isValidId(req.params.id)) return sendError(res, 400, 'INVALID_ID', 'شناسهٔ یادداشت معتبر نیست.')
       const note = await store.updateNote(req.userId, req.params.id, validateNote(req.body, true))
@@ -120,7 +122,7 @@ export function createApp(store = redisStore) {
     }
   })
 
-  app.delete('/api/notes/:id', requireAuth, async (req, res, next) => {
+  apiRouter.delete('/notes/:id', requireAuth, async (req, res, next) => {
     try {
       if (!isValidId(req.params.id)) return sendError(res, 400, 'INVALID_ID', 'شناسهٔ یادداشت معتبر نیست.')
       const deleted = await store.deleteNote(req.userId, req.params.id)
@@ -130,6 +132,10 @@ export function createApp(store = redisStore) {
       return next(error)
     }
   })
+
+  // پشتیبانی همزمان از /api و /api/v1
+  app.use('/api', apiRouter)
+  app.use('/api/v1', apiRouter)
 
   app.use((req, res) => sendError(res, 404, 'NOT_FOUND', 'مسیر درخواستی پیدا نشد.'))
   app.use((error, req, res, next) => {
@@ -146,5 +152,6 @@ export function createApp(store = redisStore) {
     console.error(`Unhandled API error on ${req.method} ${req.path}:`, error.name, error.message)
     return sendError(res, 500, 'INTERNAL_ERROR', 'خطای داخلی سرور رخ داد.')
   })
+
   return app
 }
