@@ -36,6 +36,8 @@ services:
       dockerfile: backend/Dockerfile
     container_name: notify-backend
     restart: unless-stopped
+    ports:
+      - "3000:3000"
     environment:
       NODE_ENV: production
       PORT: ${PORT:-3000}
