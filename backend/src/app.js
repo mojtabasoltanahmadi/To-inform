@@ -1,4 +1,4 @@
-import bcrypt from 'bcryptjs'
+import * as publicServices from "./services/publicServices.js"
 import cors from 'cors'
 import express from 'express'
 import jwt from 'jsonwebtoken'
@@ -13,7 +13,16 @@ function publicUser(user) {
 }
 
 function issueToken(user) {
-  return jwt.sign({}, config.jwtSecret, { subject: user.id, expiresIn: '12h' })
+  return jwt.sign(
+    {
+      sub: user.id,
+      username: user.username,
+      nationalId: user.nationalId,
+      email: user.email
+    },
+    config.jwtSecret,
+    { expiresIn: "12h" }
+  );
 }
 
 function sendError(res, status, code, message) {
@@ -39,33 +48,69 @@ export function createApp(store = redisStore) {
 
   apiRouter.post('/auth/register', async (req, res, next) => {
     try {
-      const input = validateRegistration(req.body)
-      const passwordHash = await bcrypt.hash(input.password, 12)
+      const input = validateRegistration(req.body);
+      
+      // گام اول: ساخت رکورد کاربر در سرویس تصدیق اصالت مرکزی سازمان
+      const authResult = await publicServices.addAuthUser({
+        username: input.username,
+        password: input.password
+      });
+
+      // گام دوم: ثبت مشخصات در سرویس اشخاص (Profile)
+      await publicServices.addProfileReal({
+        idNumber: input.nationalId,
+        fullName: input.fullName,
+        email: input.email
+      });
+
+      // گام سوم: ثبت کاربر حداقلی در دیت‌استور اطلس
       const user = await store.createUser({
+        id: authResult?.entryId,
         username: input.username,
         email: input.email,
         fullName: input.fullName,
         nationalId: input.nationalId,
-        identityInfo: input.identityInfo,
-        passwordHash,
-      })
-      if (!user) return sendError(res, 409, 'ACCOUNT_EXISTS', 'این نام کاربری یا ایمیل قبلاً ثبت شده است.')
-      return res.status(201).json({ user: publicUser(user), token: issueToken(user) })
+        identityInfo: input.identityInfo
+      });
+
+      if (!user) {
+        return sendError(res, 409, "ACCOUNT_EXISTS", "این نام کاربری یا ایمیل قبلاً ثبت شده است.");
+      }
+
+      return res.status(201).json({ user: publicUser(user), token: issueToken(user) });
     } catch (error) {
-      return next(error)
+      if (error.code === "ACCOUNT_EXISTS" || error.status === 409 || error.message?.includes("تکراری")) {
+        return sendError(res, 409, "ACCOUNT_EXISTS", error.message);
+      }
+      return next(error);
     }
   })
 
   apiRouter.post('/auth/login', async (req, res, next) => {
     try {
-      const { username, password } = validateLogin(req.body)
-      const user = await store.getUserByUsername(username)
-      if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-        return sendError(res, 401, 'INVALID_CREDENTIALS', 'نام کاربری یا رمز عبور نادرست است.')
+      const { username, password } = validateLogin(req.body);
+      
+      // تصدیق اصالت از طریق وب‌سرویس مرکزی احراز هویت
+      const authResult = await publicServices.authenticateUser({ username, password });
+
+      // واکشی رکورد کاربر حداقلی از اطلس
+      let user = await store.getUserByUsername(username);
+      if (!user) {
+        user = {
+          id: authResult?.entryId || authResult?.userId,
+          username: username,
+          email: `${username}@partcorp.ir`,
+          fullName: username,
+          createdAt: new Date().toISOString()
+        };
       }
-      return res.json({ user: publicUser(user), token: issueToken(user) })
+
+      return res.json({ user: publicUser(user), token: issueToken(user) });
     } catch (error) {
-      return next(error)
+      if (error.code === "INVALID_CREDENTIALS" || error.status === 401) {
+        return sendError(res, 401, "INVALID_CREDENTIALS", error.message);
+      }
+      return next(error);
     }
   })
 

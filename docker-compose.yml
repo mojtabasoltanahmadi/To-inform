@@ -49,6 +49,11 @@ services:
       ATLAS_NS_USERS: ${ATLAS_NS_USERS:-users}
       ATLAS_NS_TODOS: ${ATLAS_NS_TODOS:-todos}
       ATLAS_TIMEOUT_MS: ${ATLAS_TIMEOUT_MS:-15000}
+      PART_AUTH_URL: ${PART_AUTH_URL:-http://authentication-v7-dev.partdp.ir}
+      PART_PROFILE_URL: ${PART_PROFILE_URL:-http://profile-v7-dev.partdp.ir}
+      PART_AUTH_SYSTEM: ${PART_AUTH_SYSTEM:-mojtaba_soltanahmadi}
+      PART_AUTH_USER: ${PART_AUTH_USER:-mojtaba_soltanahmadi}
+      PART_AUTH_PASS: ${PART_AUTH_PASS:-mojtaba_soltanahmadi}
     networks:
       - notify_net
     depends_on:

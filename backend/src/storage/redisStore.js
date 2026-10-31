@@ -100,7 +100,7 @@ export const redisStore = {
       fullName: input.fullName,
       nationalId: input.nationalId,
       identityInfo: input.identityInfo || '',
-      passwordHash: input.passwordHash,
+      
       createdAt: new Date().toISOString(),
     }
 
