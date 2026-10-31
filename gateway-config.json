@@ -2,14 +2,45 @@
   "version": 2,
   "$this": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "logLevel": 10,
-    "profiler": false
+    "profiler": false,
+    "cors": {
+      "enabled": true,
+      "referrers": {
+        "192.168.49.88": {
+          "Access-Control-Allow-Origin": "http://192.168.49.88",
+          "Access-Control-Request-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          "Access-Control-Request-Headers": "Content-Type, Authorization, gateway-system",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, gateway-system",
+          "Access-Control-Allow-Credentials": true,
+          "Cache-Control": "no-cache",
+          "Access-Control-Max-Age": "86400",
+          "Access-Control-Expose-Headers": "*"
+        },
+        "localhost": {
+          "Access-Control-Allow-Origin": "http://192.168.49.88",
+          "Access-Control-Request-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          "Access-Control-Request-Headers": "Content-Type, Authorization, gateway-system",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, gateway-system",
+          "Access-Control-Allow-Credentials": true,
+          "Cache-Control": "no-cache",
+          "Access-Control-Max-Age": "86400",
+          "Access-Control-Expose-Headers": "*"
+        }
+      }
+    }
   },
   "GET:gateway-v3-dev.apipart.ir/api/v1/health": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "target": {
       "protocol": "http",
@@ -20,7 +51,9 @@
   },
   "POST:gateway-v3-dev.apipart.ir/api/v1/auth/register": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "target": {
       "protocol": "http",
@@ -31,7 +64,9 @@
   },
   "POST:gateway-v3-dev.apipart.ir/api/v1/auth/login": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "target": {
       "protocol": "http",
@@ -40,9 +75,37 @@
       "path": "/api/v1/auth/login"
     }
   },
+  "OPTIONS:gateway-v3-dev.apipart.ir/api/v1/auth/login": {
+    "enabled": true,
+    "chain": [
+      "cors"
+    ],
+    "isPublic": true,
+    "target": {
+      "protocol": "http",
+      "host": "192.168.49.88",
+      "port": 3000,
+      "path": "/api/v1/auth/login"
+    }
+  },
+  "OPTIONS:gateway-v3-dev.apipart.ir/api/v1/auth/register": {
+    "enabled": true,
+    "chain": [
+      "cors"
+    ],
+    "isPublic": true,
+    "target": {
+      "protocol": "http",
+      "host": "192.168.49.88",
+      "port": 3000,
+      "path": "/api/v1/auth/register"
+    }
+  },
   "GET:gateway-v3-dev.apipart.ir/api/v1/auth/me": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "target": {
       "protocol": "http",
@@ -53,7 +116,9 @@
   },
   "GET:gateway-v3-dev.apipart.ir/api/v1/notes": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "target": {
       "protocol": "http",
@@ -64,8 +129,23 @@
   },
   "POST:gateway-v3-dev.apipart.ir/api/v1/notes": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
+    "target": {
+      "protocol": "http",
+      "host": "192.168.49.88",
+      "port": 3000,
+      "path": "/api/v1/notes"
+    }
+  },
+  "OPTIONS:gateway-v3-dev.apipart.ir/api/v1/notes": {
+    "enabled": true,
+    "chain": [
+      "cors"
+    ],
+    "isPublic": true,
     "target": {
       "protocol": "http",
       "host": "192.168.49.88",
@@ -75,7 +155,9 @@
   },
   "GET:gateway-v3-dev.apipart.ir/api/v1/notes/:id": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "target": {
       "protocol": "http",
@@ -85,7 +167,9 @@
   },
   "PATCH:gateway-v3-dev.apipart.ir/api/v1/notes/:id": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "target": {
       "protocol": "http",
@@ -95,12 +179,39 @@
   },
   "DELETE:gateway-v3-dev.apipart.ir/api/v1/notes/:id": {
     "enabled": true,
-    "chain": [],
+    "chain": [
+      "cors"
+    ],
     "isPublic": false,
     "target": {
       "protocol": "http",
       "host": "192.168.49.88",
       "port": 3000
+    }
+  },
+  "OPTIONS:gateway-v3-dev.apipart.ir/api/v1/notes/:id": {
+    "enabled": true,
+    "chain": [
+      "cors"
+    ],
+    "isPublic": true,
+    "target": {
+      "protocol": "http",
+      "host": "192.168.49.88",
+      "port": 3000
+    }
+  },
+  "OPTIONS:gateway-v3-dev.apipart.ir/api/v1/auth/me": {
+    "enabled": true,
+    "chain": [
+      "cors"
+    ],
+    "isPublic": true,
+    "target": {
+      "protocol": "http",
+      "host": "192.168.49.88",
+      "port": 3000,
+      "path": "/api/v1/auth/me"
     }
   }
 }
